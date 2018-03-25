@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+
+import json
+from launchpadlib.launchpad import Launchpad
+import os
+from whelk import shell
+import sys
+
+data = json.load(open('test.json') if os.environ.get('PPA_COPIER_TEST') else sys.stdin)
+dest = sys.argv[1]
+os.chdir(dest)
+
+with open('/tmp/lp-token', 'w') as fd:
+    fd.write(data['source']['api_token'])
+lp = Launchpad.login_with('Concourse', 'production', version='devel', credentials_file='/tmp/lp-token')
+user, ppa = data['source']['ppa'].split('/')
+ppa = lp.people[user].getPPAByName(name=ppa)
+packages = ppa.getPublishedSources(source_name=data['source']['package'])
+packages = [p for p in packages if p.status == 'Published' and p.source_package_version == data['version']['version']]
+source = packages[0]
+
+sources = source.sourceFileUrls()
+dsc = [x for x in sources if x.endswith('.dsc')][0]
+shell.dget('-d', '-u', dsc, stdout=sys.stderr, stderr=sys.stderr, raise_on_error=True)
+
+meta = {
+    'series': source.distro_series.name,
+    'url': dsc,
+    'dsc': dsc[dsc.rfind('/')+1:],
+}
+del data['source']['api_token']
+data = {'version': data['version'], 'source': data['source'], 'metadata': [{'name': x[0], 'value': x[1]} for x in meta.items()]}
+json.dump(data, open('data.json', 'w'))
+del data['source']
+json.dump(data, sys.stdout)

@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+
+from debian.debian_support import version_compare
+import json
+from launchpadlib.launchpad import Launchpad
+import os
+import sys
+
+class Version(str):
+    def __lt__(self, other): return version_compare(self, other) <  0
+    def __le__(self, other): return version_compare(self, other) <= 0
+    def __gt__(self, other): return version_compare(self, other) >  0
+    def __ge__(self, other): return version_compare(self, other) >= 0
+    def __cmp__(self, other): return version_compare(self, other)
+
+data = json.load(open('test.json') if os.environ.get('PPA_COPIER_TEST') else sys.stdin)
+with open('/tmp/lp-token', 'w') as fd:
+    fd.write(data['source']['api_token'])
+lp = Launchpad.login_with('Concourse', 'production', version='devel', credentials_file='/tmp/lp-token')
+
+user, ppa = data['source']['ppa'].split('/')
+ppa = lp.people[user].getPPAByName(name=ppa)
+packages = ppa.getPublishedSources(source_name=data['source']['package'])
+packages = [p for p in packages if p.status == 'Published']
+packages.sort(key=lambda p: Version(p.source_package_version))
+
+if not packages:
+    json.dump([], sys.stdout)
+
+elif 'version' not in data or not data['version']:
+    json.dump([{'version': packages[-1].source_package_version}], sys.stdout)
+
+else:
+    versions = [{'version': p.source_package_version} for p in packages if Version(data['version']['version']) < Version(p.source_package_version)]
+    json.dump(versions, sys.stdout)

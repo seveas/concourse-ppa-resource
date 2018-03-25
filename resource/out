@@ -1,0 +1,42 @@
+#!/usr/bin/python3
+
+import sys
+sys.exit(1)
+
+"""This doesn't actually work, as you can't build binaries for different series from the same source"""
+
+import distro_info
+import json
+from launchpadlib.launchpad import Launchpad
+import os
+import sys
+
+with open(os.path.join(sys.argv[1], 'version')) as fd:
+    version = fd.read().strip()
+
+data = json.load(open('test.json') if os.environ.get('PPA_COPIER_TEST') else sys.stdin)
+with open('/tmp/lp-token', 'w') as fd:
+    fd.write(data['source']['api_token'])
+lp = Launchpad.login_with('Concourse', 'production', version='devel', credentials_file='/tmp/lp-token')
+
+user, ppa = data['source']['ppa'].split('/')
+ppa = lp.people[user].getPPAByName(name=ppa)
+packages = ppa.getPublishedSources(source_name=data['source']['package'], version=version)
+releases = [p.distro_series.name for p in packages]
+source = packages[0]
+to_upload = [r for r in distro_info.UbuntuDistroInfo().supported() if r not in releases]
+
+to_upload=['xenial']
+for release in to_upload:
+    sys.stderr.write("Copying from %s to %s\n" % (source.distro_series.name, release))
+    sys.stderr.flush()
+    ppa.copyPackage(
+        source_name=source.source_package_name,
+        version=source.source_package_version,
+        from_archive=ppa,
+        from_series=source.distro_series.name,
+        include_binaries=False,
+        to_pocket=source.pocket,
+        to_series=release)
+
+json.dump({"version": {"version": version}, "metadata": {"name": "uploaded-to", "value": ", ".join(to_upload)}}, sys.stdout)

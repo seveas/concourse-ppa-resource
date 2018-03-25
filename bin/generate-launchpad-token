@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+
+import argparse
+from launchpadlib.launchpad import Launchpad
+
+p = argparse.ArgumentParser()
+p.add_argument('file', help="File to store the credentials in")
+args = p.parse_args()
+
+Launchpad.login_with('Concourse', 'production', version='devel', credentials_file=args.file)
+print("Credentials saved in %s, you can now import them in vault/credhub" % args.file)
