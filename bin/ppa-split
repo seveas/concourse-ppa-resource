@@ -44,7 +44,7 @@ for series in all_series:
     shell.dpkg_source('-x', data['metadata']['dsc'])
     dirname = [x for x in glob.glob('*') if x.startswith(data['source']['package'] + '-') and os.path.isdir(x)][0]
     shell.dch('-b', '-v', '%s%s%s' % (version, sep, series), '-D', series, "Automated port to %s" % series, cwd=dirname)
-    shell.debuild('-S', '-si', '--no-check-builddeps', cwd=dirname, redirect=False)
+    shell.debuild('-S', '-si', '--no-check-builddeps', '-nc', cwd=dirname, redirect=False)
     shutil.rmtree(dirname)
     fn = '%s_%s%s%s_source.changes' % (data['source']['package'], version, sep, series)
     with open(fn) as fd:
