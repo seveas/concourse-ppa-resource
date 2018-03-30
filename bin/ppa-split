@@ -46,7 +46,10 @@ for series in all_series:
     shell.dch('-b', '-v', '%s%s%s' % (version, sep, series), '-D', series, "Automated port to %s" % series, cwd=dirname)
     shell.debuild('-S', '-si', '--no-check-builddeps', '-nc', cwd=dirname, redirect=False)
     shutil.rmtree(dirname)
-    fn = '%s_%s%s%s_source.changes' % (data['source']['package'], version, sep, series)
+    eversion = version
+    if ':' in eversion:
+        eversion = eversion[eversion.find(':')+1:]
+    fn = '%s_%s%s%s_source.changes' % (data['source']['package'], eversion, sep, series)
     with open(fn) as fd:
         changes = Changes(fd)
     for fn in [fn] + [x['name'] for x in changes['Files']]:
