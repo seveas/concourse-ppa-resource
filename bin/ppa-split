@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from debian.deb822 import Changes
-import distro_info
 import glob
 import json
 from launchpadlib.launchpad import Launchpad
@@ -11,16 +10,13 @@ import sys
 from whelk import Shell
 shell = Shell(stdout=sys.stderr, stderr=sys.stderr, raise_on_error=True)
 
-_series = [x.series for x in sorted(distro_info.UbuntuDistroInfo().get_all('object'), key=lambda r: r.release)]
-def newer(r1, r2):
-    _series.index(r1) > _series.index(r2)
-
 os.chdir(sys.argv[1])
 dest = sys.argv[2]
 
 with open('/tmp/lp-token', 'w') as fd:
     fd.write(os.environ['API_TOKEN'])
 lp = Launchpad.login_with('Concourse', 'production', version='devel', credentials_file='/tmp/lp-token')
+
 data = json.load(open('data.json'))
 data['metadata'] = {x['name']: x['value'] for x in data['metadata']}
 
@@ -29,29 +25,35 @@ ppa = lp.people[user].getPPAByName(name=ppa)
 packages = ppa.getPublishedSources(source_name=data['source']['package'])
 candidates = [(p.source_package_version, p.distro_series.name) for p in packages]
 
+all_series = [s for s in lp.distributions['ubuntu'].series if s.active]
+all_series.sort(key = lambda s: s.date_created)
+
+_series = [x.name for x in all_series]
+def newer(r1, r2):
+    _series.index(r1) > _series.index(r2)
+
 # Find out which ones we still need to upload
 version = data['version']['version']
-all_series = distro_info.UbuntuDistroInfo().supported()
 for series in all_series[:]:
-    for v in (version, '%s+%s' % (version, series), '%s~%s' % (version, series)):
-        if (v, series) in candidates:
+    for v in (version, '%s+%s' % (version, series.name), '%s~%s' % (version, series.name)):
+        if (v, series.name) in candidates:
             all_series.remove(series)
 
 if not all_series:
     json.dump({"version": {"version": version}, "metadata": {"name": "ported-to", "value": ""}}, sys.stdout)
 for series in all_series:
-    sep = '+' if newer(series, data['metadata']['series']) else '~'
+    sep = '+' if newer(series.name, data['metadata']['series']) else '~'
     shell.dpkg_source('-x', data['metadata']['dsc'])
     dirname = [x for x in glob.glob('*') if x.startswith(data['source']['package'] + '-') and os.path.isdir(x)][0]
-    shell.dch('-b', '-v', '%s%s%s' % (version, sep, series), '-D', series, "Automated port to %s" % series, cwd=dirname)
+    shell.dch('-b', '-v', '%s%s%s' % (version, sep, series.name), '-D', series.name, "Automated port to %s" % series.name, cwd=dirname)
     shell.debuild('-S', '-si', '--no-check-builddeps', '-nc', cwd=dirname, redirect=False)
     shutil.rmtree(dirname)
     eversion = version
     if ':' in eversion:
         eversion = eversion[eversion.find(':')+1:]
-    fn = '%s_%s%s%s_source.changes' % (data['source']['package'], eversion, sep, series)
+    fn = '%s_%s%s%s_source.changes' % (data['source']['package'], eversion, sep, series.name)
     with open(fn) as fd:
         changes = Changes(fd)
     for fn in [fn] + [x['name'] for x in changes['Files']]:
         shutil.move(fn, dest)
-json.dump({"version": {"version": version}, "metadata": [{"name": "ported-to", "value": ", ".join(all_series)}]}, sys.stdout)
+json.dump({"version": {"version": version}, "metadata": [{"name": "ported-to", "value": ", ".join([x.name for x in all_series])}]}, sys.stdout)
