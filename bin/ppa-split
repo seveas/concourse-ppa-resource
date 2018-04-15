@@ -25,8 +25,9 @@ ppa = lp.people[user].getPPAByName(name=ppa)
 packages = ppa.getPublishedSources(source_name=data['source']['package'])
 candidates = [(p.source_package_version, p.distro_series.name) for p in packages]
 
-all_series = [s for s in lp.distributions['ubuntu'].series if s.active]
+all_series = [s for s in lp.distributions['ubuntu'].series]
 all_series.sort(key = lambda s: s.date_created)
+active_series = [s for s in all_series if s.active]
 
 _series = [x.name for x in all_series]
 def newer(r1, r2):
@@ -34,14 +35,14 @@ def newer(r1, r2):
 
 # Find out which ones we still need to upload
 version = data['version']['version']
-for series in all_series[:]:
+for series in active_series[:]:
     for v in (version, '%s+%s' % (version, series.name), '%s~%s' % (version, series.name)):
         if (v, series.name) in candidates:
-            all_series.remove(series)
+            active_series.remove(series)
 
-if not all_series:
+if not active_series:
     json.dump({"version": {"version": version}, "metadata": {"name": "ported-to", "value": ""}}, sys.stdout)
-for series in all_series:
+for series in active_series:
     sep = '+' if newer(series.name, data['metadata']['series']) else '~'
     shell.dpkg_source('-x', data['metadata']['dsc'])
     dirname = [x for x in glob.glob('*') if x.startswith(data['source']['package'] + '-') and os.path.isdir(x)][0]
@@ -56,4 +57,4 @@ for series in all_series:
         changes = Changes(fd)
     for fn in [fn] + [x['name'] for x in changes['Files']]:
         shutil.move(fn, dest)
-json.dump({"version": {"version": version}, "metadata": [{"name": "ported-to", "value": ", ".join([x.name for x in all_series])}]}, sys.stdout)
+json.dump({"version": {"version": version}, "metadata": [{"name": "ported-to", "value": ", ".join([x.name for x in active_series])}]}, sys.stdout)
