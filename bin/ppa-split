@@ -5,6 +5,7 @@ import glob
 import json
 from launchpadlib.launchpad import Launchpad
 import os
+import re
 import shutil
 import sys
 from whelk import Shell
@@ -19,6 +20,7 @@ lp = Launchpad.login_with('Concourse', 'production', version='devel', credential
 
 data = json.load(open('data.json'))
 data['metadata'] = {x['name']: x['value'] for x in data['metadata']}
+source_series = data['metadata']['series']
 
 user, ppa = data['source']['ppa'].split('/')
 ppa = lp.people[user].getPPAByName(name=ppa)
@@ -31,11 +33,15 @@ active_series = [s for s in all_series if s.active]
 
 _series = [x.name for x in all_series]
 def newer(r1, r2):
-    _series.index(r1) > _series.index(r2)
+    return _series.index(r1) > _series.index(r2)
 
 # Find out which ones we still need to upload
 version = data['version']['version']
+version = re.sub('[~+]%s$' % source_series, '', version)
 for series in active_series[:]:
+    if series.name == source_series:
+        active_series.remove(series)
+        continue
     for v in (version, '%s+%s' % (version, series.name), '%s~%s' % (version, series.name)):
         if (v, series.name) in candidates:
             active_series.remove(series)
@@ -43,7 +49,7 @@ for series in active_series[:]:
 if not active_series:
     json.dump({"version": {"version": version}, "metadata": {"name": "ported-to", "value": ""}}, sys.stdout)
 for series in active_series:
-    sep = '+' if newer(series.name, data['metadata']['series']) else '~'
+    sep = '+' if newer(series.name, source_series) else '~'
     shell.dpkg_source('-x', data['metadata']['dsc'])
     dirname = [x for x in glob.glob('*') if x.startswith(data['source']['package'] + '-') and os.path.isdir(x)][0]
     shell.dch('-b', '-v', '%s%s%s' % (version, sep, series.name), '-D', series.name, "Automated port to %s" % series.name, cwd=dirname)
